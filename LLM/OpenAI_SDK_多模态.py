@@ -55,10 +55,24 @@ async def main():
     mime = sniff_mime(IMAGE_PATH.read_bytes())
     print(f'图片真实格式:{mime}')  # 调试提示:此处若显示 image/jpeg 说明扩展名具有误导性
 
+    # 【关键】openai-agents 底层走的是 Responses API(client.responses.create),
+    # 它和 Chat Completions 的消息格式不一样,内容分片的 type 完全不同:
+    #
+    #   Chat Completions : {'type': 'image_url', 'image_url': {'url': ...}}
+    #                      {'type': 'text',      'text': ...}
+    #   Responses API    : {'type': 'input_image', 'image_url': <data URL 字符串>}
+    #                      {'type': 'input_text',  'text': ...}
+    #
+    # 按 Chat Completions 的写法传会得到 422:
+    #   unknown variant `image_url`, expected one of
+    #   `input_text`, `output_text`, `input_image`, `input_file`
+    #
+    # 另外注意 image_url 在这里是「数据 URL 字符串」,不再是 {'url': ...} 嵌套对象。
+    # (参考 agents/models/chatcmpl_converter.py 中 SDK 自身的拼装方式)
     message = [
         {'role': 'user', 'content': [
-            {'type': 'image_url', 'image_url': {'url': f'data:{mime};base64,{base64_image}'}},
-            {'type': 'text', 'text': '评价这张图片'}
+            {'type': 'input_image', 'image_url': f'data:{mime};base64,{base64_image}'},
+            {'type': 'input_text', 'text': '评价这张图片'}
         ]}
     ]
 
