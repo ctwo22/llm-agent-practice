@@ -277,7 +277,6 @@ completion_tokens = 模型输出
 
 ## 已知问题
 
-- **模型名不统一**：`deepseek-flash` 与 `deepseek-v4-flash` 混用，需要对接到实际可用的模型名
 - **部分脚本缺少 `__main__` 保护**：`LLMwithWeather.py` 的主循环位于模块级，被 import 时会阻塞在 `input()`
 - **上下文管理只完成一半**：滑动窗口已接入；摘要记忆 `content_summary` 尚未启用，也缺少「滑窗 vs 摘要」压缩损失的对比数据
 
