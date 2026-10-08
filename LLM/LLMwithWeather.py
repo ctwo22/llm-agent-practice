@@ -85,6 +85,51 @@ messages = [
     {'role': 'system', 'content': '作为女朋友'}
 ]
 
+
+# ========== 上下文管理工具 ==========
+# 原代码把这两个函数写在 while True 之后:主循环只能靠 break 退出,
+# 所以函数虽然能被定义成功,却永远不会被调用 —— 等于死代码。
+# 现在提到循环之前定义,并真正接进主流程。
+
+MAX_HISTORY_MESSAGES = 20  # 历史消息超过这个条数时启用滑动窗口
+
+
+def content_summary(message_list):
+    """摘要记忆:让 LLM 把已有对话压缩成一条 system 消息,替代完整历史
+
+    适合超长对话(比滑动窗口保留更多语义),代价是要多花一次 API 调用。
+    """
+    response = client.chat.completions.create(
+        model='deepseek-v4-flash',
+        messages=[{
+            'role': 'user',
+            'content': f'请对以下对话内容进行总结:{message_list}'
+        }]
+    )
+    return [{'role': 'system', 'content': f'此前对话的总结:{response.choices[0].message.content}'}]
+
+
+def new_message_list_window(message_list: list, k=2):
+    """滑动窗口:保留 system 提示 + 最近 k 轮完整对话
+
+    【原实现的两个 bug】
+    ① 外层判断 != 'system',内层判断 == 'system',两者互相矛盾 → 内层恒为假,
+       系统提示永远不会被补回。
+    ② 直接取 message_list[-k:] 可能把 assistant(tool_calls) 和紧随其后的 tool
+       消息切断,API 会因为「tool_call_id 找不到对应调用」直接报错。
+
+    这里改为以 user 消息作为「轮」的起点切分,工具调用与其结果天然成对保留。
+    """
+    system_msgs = [m for m in message_list if m.get('role') == 'system']
+    rest = [m for m in message_list if m.get('role') != 'system']
+
+    turn_starts = [i for i, m in enumerate(rest) if m.get('role') == 'user']
+    if len(turn_starts) <= k:
+        return list(message_list)  # 轮数还不够,无需裁剪
+
+    return system_msgs + rest[turn_starts[-k]:]
+
+
 # 5.主循环
 print('AI助手启动!')
 
@@ -102,6 +147,14 @@ while True:
         break
     # 字典表示 {}
     messages.append({"role": "user", 'content': user_input})
+
+    # 5.0 历史过长时启用滑动窗口,避免上下文超限导致调用失败
+    # (修复前这两个函数是死代码,上下文只会无限增长)
+    if len(messages) > MAX_HISTORY_MESSAGES:
+        before = len(messages)
+        # 用切片赋值原地替换,保持 messages 这个列表对象的身份不变
+        messages[:] = new_message_list_window(messages, k=3)
+        print(f'[上下文管理] 历史 {before} 条 → 裁剪为 {len(messages)} 条')
 
     # 5.1 第一次调用模型 ,判断是否需要调用工具
     response = client.chat.completions.create(  # 固定格式这一块
@@ -174,26 +227,5 @@ while True:
 '''
 
 
-# 摘要记忆(个人感觉比滑动合适):利用LLM对对话进行总结 ,并替代完整的对话
-def content_summary(message_list):  # 这个message_list 直接传历史记录吧(感觉比较好)
-    response = client.chat.completions.create(
-        model='deepseek-v4-flash',
-        messages=[{
-            'role': 'user',
-            'content': f'请对以下对话内容进行总结:{message_list}'
-        }]
-    )
-    new_message_list = [{'role': 'system', 'content': f'此前对话的总结:{response.choices[0].message.content}'}]
-    return new_message_list
-
-
-# 关于滑动窗口(避免上下文过长而使LLM调用失败) (一般和摘要记忆配合使用)
-def new_message_list_window(message_list: list, k=2):  # message_list : list 类型注解(解释message_list为list类型)
-    new_message_list: list = message_list[k * -1:]  # new_message为当前位置前1或n个字典数据
-
-    # 如果丢失系统提示 ,则手动补全
-    if new_message_list[0]['role'] != 'system':  # 检查现在有无系统提示
-        if new_message_list[0]['role'] == 'system':  # 检查之前有无系统提示
-            new_message_list.insert(0, message_list[0])  # 补全系统提示
-
-    return new_message_list  # 返回new_message_list 作为message
+# 注:content_summary / new_message_list_window 已上移到主循环之前(见「上下文管理工具」),
+# 并在循环内通过 MAX_HISTORY_MESSAGES 真正生效。
