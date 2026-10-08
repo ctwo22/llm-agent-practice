@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import openai
 
 # ========== 初始化客户端 ==========
@@ -7,6 +8,14 @@ client = openai.OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
     base_url='https://api.deepseek.com'
 )
+
+# ========== 循环控制参数(可用环境变量覆盖) ==========
+# 原代码写死 max_turns = 1,注释却写「最多循环10轮」:
+# 模型一旦调用工具,工具结果写回历史后循环立即结束,模型根本没机会看到「观察」结果
+# → 程序只打印了「操作/观察」就静默退出,永远拿不到最终答案
+# 现在改成:上限可配置 + 整体超时兜底 —— 既能跑完「思考→操作→观察→答案」,又不会死循环烧钱
+MAX_TURNS = int(os.environ.get('REACT_MAX_TURNS', '10'))     # 单轮问答最多几轮 LLM 调用
+MAX_SECONDS = float(os.environ.get('REACT_TIMEOUT', '120'))  # 单轮问答整体超时(秒)
 
 
 # ========== 工具函数：模拟数据库查询 ==========
@@ -137,18 +146,25 @@ def agent(query):
     # 先把用户问题加入历史
     message_history.append({'role': 'user', 'content': query})
 
-    max_turns = 1  # 最多循环10轮 ,防止卡死烧钱
     current_turn = 0
+    deadline = time.monotonic() + MAX_SECONDS
+    finished = False  # 是否拿到了最终答案(用于区分「正常结束」和「撞上限退出」)
 
     # 不用while True 原因:这是工程上的*防御性编程*，防止死循环烧钱
-    while current_turn < max_turns:
+    while current_turn < MAX_TURNS:
         current_turn += 1
+
+        # 超时兜底:模型可能反复调用工具,用整体截止时间兜住,避免一直烧钱
+        if time.monotonic() > deadline:
+            print(f'[超时] 本轮已超过 {MAX_SECONDS:.0f} 秒,主动中止')
+            break
+
         # 用户问题已经导入历史 -get_completion(调用AI)返回AI对历史问题的回答(包含结合历史的对话)
         # message 是接AI对问题的回答
         message = get_completion()
 
         if message['content']:
-            print(f'思考:{message['content']}')  # 打印AI的文字回复(可能为空 -只调用工具, 不回复)
+            print(f'思考:{message["content"]}')  # 打印AI的文字回复(可能为空 -只调用工具, 不回复)
 
         if message['tool_calls']:  # 如果LLM的返回里要调用tools,则'tool_calls':True
 
@@ -176,6 +192,7 @@ def agent(query):
                 if func_name == 'get_info_on_ballGame':
                     func_result = get_info_on_ballGame(**func_kwargs)  # ** : 解包
                 else:
+                    # 模型偶尔会编造工具名:不抛异常,而是把错误当成「观察」喂回去,让它自己纠正
                     func_result = f'错误:未知工具{func_name}'
 
                 print(f'观察: {func_result}')  # 这个就是调用工具后LLM返回的
@@ -193,7 +210,12 @@ def agent(query):
         else:
             # 在出结果之前会一直调用,出结果后(即不会再调用工具)要给一个可以出去的地方
             print('未调用工具,回答结束')
+            finished = True
             break
+
+    # 修复前这里什么都不说就结束,用户完全不知道「为什么只有操作和观察,没有答案」
+    if not finished:
+        print(f'[未收敛] 循环结束但未得到最终答案(上限 {MAX_TURNS} 轮 / {MAX_SECONDS:.0f} 秒)')
 
 
 # ========== 程序入口（连续对话） ==========
