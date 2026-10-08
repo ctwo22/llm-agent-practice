@@ -105,26 +105,6 @@ pydantic==2.13.5           数据模型
 deepseek-tokenizer==0.3.0  分词器
 ```
 
-### ⚠️ 一个容易搞反的地方
-
-**「从清单里删除」不等于「从环境中卸载」。**
-
-`httpx2` / `httpcore2` 看起来与业务代码无关，但从各包 METADATA 中查到的依赖声明是：
-
-```
-openai 3.6.0   Requires-Dist: httpx2<3,>=2.7.0     无 marker，硬依赖
-mcp 2.1.1      Requires-Dist: httpx2>=2.5.0        无 marker，硬依赖
-httpx2 2.12.0  Requires-Dist: httpcore2==2.12.0
-```
-
-它们是 `openai` 和 `mcp` 的必需依赖，卸载会直接导致两者无法导入。正确做法是：**清单里不列，环境里保留，交给 pip 自动解析传递依赖。**
-
-同样处理的还有 `uvicorn` / `starlette` / `sse-starlette` / `cryptography` / `pywin32` 等，它们都是 `mcp` 或 `openai-agents` 的传递依赖。
-
-### 真正被清理的包
-
-`Runner==1.1` —— PyPI 上一个 GPLv2 许可的 Unix shell 命令运行器（作者 Milan Falešník），与代码中的 `from agents import Runner` 无关。后者来自 `openai-agents` 包，不需要单独安装。该包已卸载：它没有任何包依赖，却注册了顶层模块 `Runner`，且会引入 GPLv2 许可。
-
 ---
 
 ## 问题记录
