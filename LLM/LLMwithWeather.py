@@ -133,17 +133,49 @@ def new_message_list_window(message_list: list, k=2):
 # 5.主循环
 print('AI助手启动!')
 
-# 设置总Token计数
-ALL_token = 0
+
+# ========== Token 统计 ==========
+# 原实现只统计「用户本轮输入」:re_token = ds_token.encode(user_input)
+# 代码末尾的注释自己都承认「输出和 system 都没算」—— 数字严重偏低。
+# 现在改用 API 返回的 usage 字段,它天然覆盖全部消耗:
+#   prompt_tokens     = system 提示 + 完整历史 + 本轮输入
+#   completion_tokens = 模型输出
+#   total_tokens      = 两者之和
+# 部分中转/兼容接口不返回 usage,此时退回 deepseek_tokenizer 估算。
+TOTAL_PROMPT = 0
+TOTAL_COMPLETION = 0
+TOTAL_TOKENS = 0
+
+
+def count_with_ds_token(*texts):
+    """离线兜底:用 deepseek_tokenizer 估算 token 数"""
+    return sum(len(ds_token.encode(t)) for t in texts if t)
+
+
+def report_usage(usage, *fallback_texts):
+    """累加并打印本轮用量;usage 为 None 时用分词器估算"""
+    global TOTAL_PROMPT, TOTAL_COMPLETION, TOTAL_TOKENS
+
+    if usage is not None:
+        TOTAL_PROMPT += usage.prompt_tokens
+        TOTAL_COMPLETION += usage.completion_tokens
+        TOTAL_TOKENS += usage.total_tokens
+        print(f'本轮 Token —— 输入(含system与历史):{usage.prompt_tokens} , '
+              f'输出:{usage.completion_tokens} , 合计:{usage.total_tokens}')
+    else:
+        est = count_with_ds_token(*fallback_texts)
+        TOTAL_TOKENS += est
+        print(f'本轮 Token —— 服务端未返回 usage,估算:{est}')
+
+    print(f'累计 Token —— 输入:{TOTAL_PROMPT} , 输出:{TOTAL_COMPLETION} , 合计:{TOTAL_TOKENS}')
+
 
 while True:
     user_input = input("c:")
-    re_token = ds_token.encode(user_input)
 
     if user_input in ['退出', 'exit', '拜']:
         print('CgF:下次再见咯💕')
-        ALL_token += len(re_token)
-        print(f'当前对话Token数:{len(re_token)} , 总Token数:{ALL_token}')
+        print(f'本次对话累计 Token:{TOTAL_TOKENS}')
         break
     # 字典表示 {}
     messages.append({"role": "user", 'content': user_input})
@@ -193,22 +225,32 @@ while True:
             })
 
         # 流式输出agent的回答
+        # stream_options={'include_usage': True} 让服务端在最后一个 chunk 里带上 usage,
+        # 否则流式调用拿不到任何 token 统计
         stream = client.chat.completions.create(
             model='deepseek-v4-flash',
             messages=messages,
             temperature=1,
-            stream=True
+            stream=True,
+            stream_options={'include_usage': True}
         )
 
         print('CgF:', end='')
         full_answer = ''
+        stream_usage = None
         for chunk in stream:
-            if chunk.choices[0].delta.content:  # 判断是否为空
+            # 带 usage 的那个 chunk 的 choices 是「空列表」,必须先判空再取 [0],
+            # 否则会 IndexError —— 这是开启 include_usage 后最常见的坑
+            if chunk.choices and chunk.choices[0].delta.content:
                 print(chunk.choices[0].delta.content, end='', flush=True)  # 流式的固定格式
                 full_answer += chunk.choices[0].delta.content
+            if getattr(chunk, 'usage', None):
+                stream_usage = chunk.usage
         print()
-        ALL_token += len(re_token)
-        print(f'当前对话Token数:{len(re_token)} , 总Token数:{ALL_token}')
+
+        # 这一轮实际发生了两次模型调用,两次的 token 都要计入
+        report_usage(response.usage)                                  # 第一次:判断是否调工具
+        report_usage(stream_usage, user_input, full_answer)           # 第二次:生成回答
         print()  # 使用end='' 后换行符会不起作用 ,用print换行
         messages.append({"role": 'assistant', 'content': full_answer})
 
@@ -218,12 +260,14 @@ while True:
         # 2.把第一次调用改为流式 ,这个要大改 ,挺复杂的
         full_answer = assistant_msg.content
         print(f'CgF:{full_answer}')
-        ALL_token += len(re_token)
-        print(f'当前对话Token数:{len(re_token)} , 总Token数:{ALL_token}')
+        report_usage(response.usage, user_input, full_answer)
         messages.append({'role': 'assistant', 'content': full_answer})
 '''
-因为只有输出的时候为了客户端看得更舒服 ,所以会用到流式输出(需要再次调用model)
-这个Token仅计算了我输入 -输出和system都没算
+因为只有输出的时候为了客户端看得更舒服 ,所以会用到流式输出(需要再次调用model)。
+Token 统计已改为读取 API 返回的 usage 字段:
+  prompt_tokens 覆盖 system 提示 + 完整历史 + 本轮输入,
+  completion_tokens 覆盖模型输出,
+因此原来「输出和 system 都没算」的问题已修复。
 '''
 
 
