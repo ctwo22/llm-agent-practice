@@ -1,0 +1,199 @@
+import json
+import os
+import httpx
+from deepseek_tokenizer import ds_token
+from openai import OpenAI
+from openai.types.beta import assistant
+
+# 1.初始化LLM客户端
+client = OpenAI(
+    base_url="https://api.deepseek.com",
+    api_key=os.environ.get("DEEPSEEK_API_KEY"),
+)
+
+
+# 2.python语言构造天气查询工具
+def get_weather(city):
+    try:
+        url = 'https://uapis.cn/api/v1/misc/weather'  # 调用API的地址
+        response = httpx.get(
+            url,
+            params={
+                'city': city,
+                'extended': True,
+                'indices': True,
+            },
+
+            timeout=30.0
+        )
+
+        response.raise_for_status()  # 状态码不是200就报错
+
+        data = response.json()  # json → python字典
+
+        # 上面的data就是表示从天气API里输入城市后返回的数据 ,实际都在运行中了
+        city_name = data.get('city', city)
+        weather = data.get('weather', "未知")
+        temperature = data.get('temperature', '未知')
+        wind_power = data.get('wind_power', "")
+        humidity = data.get('humidity', "")
+        feels_like = data.get('feels_like', "")
+        report_time = data.get('report_time', "")
+
+        result = (  # 如果调用此工具 ,一定会返回的一些答案
+            f"{city_name}当前天气:{weather},"
+            f"温度:{temperature},"
+            f'风力:{wind_power},'
+            f'湿度:{humidity},'
+            f'体感温度:{feels_like},'
+            f'发布时间:{report_time},'
+
+        )
+        return result
+
+    except Exception as e:
+        return f'天气查询失败:{str(e)}'
+
+
+# 3.给LLM看的'工具说明书' -固定格式居多
+tools = [
+    {
+        'type': 'function',
+        'function': {
+            'name': 'get_weather',
+            'description': (
+                "根据城市名查询指定地点的当前实时天气。"
+                "当用户询问任何城市的天气、气温、温度、多冷、多热、穿什么衣服等此类时调用此工具。"
+            ),  # 每个key的最后一个可以不需要写','
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'city': {
+                        'type': 'string',
+                        'description': "要查询的城市名,例如'北京'、'上海'等等"
+                    }
+                },
+                'required': ['city']
+            },
+            'strict': True
+        }
+    }
+]
+
+# 4.初始化历史对话
+messages = [
+    {'role': 'system', 'content': '作为女朋友'}
+]
+
+# 5.主循环
+print('AI助手启动!')
+
+# 设置总Token计数
+ALL_token = 0
+
+while True:
+    user_input = input("c:")
+    re_token = ds_token.encode(user_input)
+
+    if user_input in ['退出', 'exit', '拜']:
+        print('CgF:下次再见咯💕')
+        ALL_token += len(re_token)
+        print(f'当前对话Token数:{len(re_token)} , 总Token数:{ALL_token}')
+        break
+    # 字典表示 {}
+    messages.append({"role": "user", 'content': user_input})
+
+    # 5.1 第一次调用模型 ,判断是否需要调用工具
+    response = client.chat.completions.create(  # 固定格式这一块
+        model='deepseek-v4-flash',
+        messages=messages,
+        tools=tools,
+        tool_choice='auto',  # 大模型自己判断是否要调用工具
+        temperature=1.0
+    )
+    # 5.2.1写个变量读取大模型的回复
+    assistant_msg = response.choices[0].message
+
+    # ! 此次if下去了就表示大模型需要调用工具 !
+    if assistant_msg.tool_calls:
+        messages.append(assistant_msg)  # 向历史消息中穿入要调用的信息
+
+        # for -因为大模型可能一次调用多个工具
+        for tool_call in assistant_msg.tool_calls:
+            # 5.2.2 从这开始为调用函数(weather)做准备
+            func_name = tool_call.function.name  # 取出大模型要调用的函数名
+            func_args = json.loads(tool_call.function.arguments)  # 取出大模型传的参数
+            # print(f"函数:{func_name}, 参数:{func_args}")  # 真正运行时注释掉
+
+            # 5.2.3 匹配函数名
+            if func_name == 'get_weather':
+                tool_result = get_weather(func_args['city'])
+            else:
+                tool_result = '未知工具'
+
+            # print(f'工具返回结果:{tool_result}')  # 正式运行时注释
+
+            messages.append({  # 将第一次调用模型时 对工具的使用的结果放入历史消息中
+                'role': 'tool',
+                'tool_call_id': tool_call.id,
+                'content': str(tool_result)
+            })
+
+        # 流式输出agent的回答
+        stream = client.chat.completions.create(
+            model='deepseek-v4-flash',
+            messages=messages,
+            temperature=1,
+            stream=True
+        )
+
+        print('CgF:', end='')
+        full_answer = ''
+        for chunk in stream:
+            if chunk.choices[0].delta.content:  # 判断是否为空
+                print(chunk.choices[0].delta.content, end='', flush=True)  # 流式的固定格式
+                full_answer += chunk.choices[0].delta.content
+        print()
+        ALL_token += len(re_token)
+        print(f'当前对话Token数:{len(re_token)} , 总Token数:{ALL_token}')
+        print()  # 使用end='' 后换行符会不起作用 ,用print换行
+        messages.append({"role": 'assistant', 'content': full_answer})
+
+    else:
+        # 改为流式有2种方法:
+        # 1.再调用一次model
+        # 2.把第一次调用改为流式 ,这个要大改 ,挺复杂的
+        full_answer = assistant_msg.content
+        print(f'CgF:{full_answer}')
+        ALL_token += len(re_token)
+        print(f'当前对话Token数:{len(re_token)} , 总Token数:{ALL_token}')
+        messages.append({'role': 'assistant', 'content': full_answer})
+'''
+因为只有输出的时候为了客户端看得更舒服 ,所以会用到流式输出(需要再次调用model)
+这个Token仅计算了我输入 -输出和system都没算
+'''
+
+
+# 摘要记忆(个人感觉比滑动合适):利用LLM对对话进行总结 ,并替代完整的对话
+def content_summary(message_list):  # 这个message_list 直接传历史记录吧(感觉比较好)
+    response = client.chat.completions.create(
+        model='deepseek-v4-flash',
+        messages=[{
+            'role': 'user',
+            'content': f'请对以下对话内容进行总结:{message_list}'
+        }]
+    )
+    new_message_list = [{'role': 'system', 'content': f'此前对话的总结:{response.choices[0].message.content}'}]
+    return new_message_list
+
+
+# 关于滑动窗口(避免上下文过长而使LLM调用失败) (一般和摘要记忆配合使用)
+def new_message_list_window(message_list: list, k=2):  # message_list : list 类型注解(解释message_list为list类型)
+    new_message_list: list = message_list[k * -1:]  # new_message为当前位置前1或n个字典数据
+
+    # 如果丢失系统提示 ,则手动补全
+    if new_message_list[0]['role'] != 'system':  # 检查现在有无系统提示
+        if new_message_list[0]['role'] == 'system':  # 检查之前有无系统提示
+            new_message_list.insert(0, message_list[0])  # 补全系统提示
+
+    return new_message_list  # 返回new_message_list 作为message
