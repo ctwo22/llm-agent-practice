@@ -1,0 +1,21 @@
+# 直接依赖 —— 只列代码里真正 import 的包
+# 传递依赖（uvicorn / starlette / httpx2 / cryptography 等）由 pip 自动解析安装，不在此列出
+# 生成方式：pip freeze 全量快照(44) → 剔除传递依赖 → 保留 6 个直接依赖
+
+# LLM 客户端
+openai==3.6.0
+
+# Agent 框架（提供 agents.Agent / agents.Runner / agents.function_tool）
+openai-agents==0.22.0
+
+# MCP 协议服务端
+mcp==2.1.1
+
+# HTTP 客户端
+httpx==0.28.1
+
+# 数据模型（function_tool 参数校验）
+pydantic==2.13.5
+
+# DeepSeek 分词器（token 统计）
+deepseek-tokenizer==0.3.0
