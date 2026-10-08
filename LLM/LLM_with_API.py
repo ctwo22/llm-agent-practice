@@ -19,13 +19,17 @@ stream = client.chat.completions.create(
     stream=True,
 )
 
-# 直接完整输出 name:completion
-# print(completion.choices[0].message.content)  # 固定格式 -直接输出结果
-
-# 流式可以改为stream好认
+# stream=True 返回的是「流对象」,必须逐块迭代才会真正拿到内容
+# 之前只把返回值赋给 stream 却从未迭代 → 请求发出去了,但程序一个字都不打印
 # 逐步、增量的输出内容 -配合stream
-# for chunk in stream:
-#     print(chunk.choices[0].delta.content, end='', flush=True)
+for chunk in stream:
+    if chunk.choices[0].delta.content:  # 部分 chunk 的 content 为 None(如末尾块)
+        print(chunk.choices[0].delta.content, end='', flush=True)
+print()  # end='' 会吃掉换行,末尾手动补一个
+
+# 非流式的等价写法(stream=False 时用):
+# completion = client.chat.completions.create(model=..., messages=..., stream=False)
+# print(completion.choices[0].message.content)
 
 '''
 
