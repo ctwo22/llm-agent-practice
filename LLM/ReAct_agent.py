@@ -131,7 +131,7 @@ message_history.append({'role': 'system', 'content': system_prompt})
 def get_completion():
     '''把message_history 发给AI ,拿到回复并追加历史 ,返回回复字典'''
     response = client.chat.completions.create(
-        model='deepseek-chat',
+        model='deepseek-flash',  # 原为 deepseek-chat(V3 时代的旧名,当前模型表已无此项)
         messages=message_history,
         tools=tools,
     )

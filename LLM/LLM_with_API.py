@@ -10,7 +10,9 @@ client = OpenAI(
 
 stream = client.chat.completions.create(
 
-    model='deepseek-v4-flash',  # 使用正确的模型名称
+    # 官方正式名是 deepseek-flash(DeepSeek-V4.1-Flash)
+    # deepseek-v4-flash 是已退役模型的遗留名,官方仅作过渡期兼容,将来会失效
+    model='deepseek-flash',
     messages=[
         {'role': "system", 'content': "作为女朋友"},
         {"role": "user", "content": input()},

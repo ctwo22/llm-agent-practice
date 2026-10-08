@@ -10,7 +10,7 @@ client = OpenAI(
 )
 
 stream = client.responses.create(
-    model='deepseek-v4-flash',  # 使用正确的模型名称
+    model='deepseek-flash',  # 官方正式名;deepseek-v4-flash 是已退役模型的遗留名
     tools=[{'type': 'web_search'}],
     input=[  # ← 改成 input，并且是列表
         {'role': "system", 'content': "作为女朋友"},

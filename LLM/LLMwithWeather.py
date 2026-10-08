@@ -100,7 +100,7 @@ def content_summary(message_list):
     适合超长对话(比滑动窗口保留更多语义),代价是要多花一次 API 调用。
     """
     response = client.chat.completions.create(
-        model='deepseek-v4-flash',
+        model='deepseek-flash',  # 官方正式名(deepseek-v4-flash 是已退役模型的遗留名)
         messages=[{
             'role': 'user',
             'content': f'请对以下对话内容进行总结:{message_list}'
@@ -190,7 +190,7 @@ while True:
 
     # 5.1 第一次调用模型 ,判断是否需要调用工具
     response = client.chat.completions.create(  # 固定格式这一块
-        model='deepseek-v4-flash',
+        model='deepseek-flash',
         messages=messages,
         tools=tools,
         tool_choice='auto',  # 大模型自己判断是否要调用工具
@@ -228,7 +228,7 @@ while True:
         # stream_options={'include_usage': True} 让服务端在最后一个 chunk 里带上 usage,
         # 否则流式调用拿不到任何 token 统计
         stream = client.chat.completions.create(
-            model='deepseek-v4-flash',
+            model='deepseek-flash',
             messages=messages,
             temperature=1,
             stream=True,
