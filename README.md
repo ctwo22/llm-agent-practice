@@ -1,5 +1,11 @@
 # llm-agent-practice
 
+![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
+![DeepSeek](https://img.shields.io/badge/DeepSeek-API-4D6BFE)
+![scripts](https://img.shields.io/badge/scripts-15-informational)
+![commits](https://img.shields.io/github/commit-activity/t/ctwo22/llm-agent-practice)
+![bugs fixed](https://img.shields.io/badge/bugs%20fixed-6-success)
+
 LLM 应用开发实践：从 OpenAI SDK 基础调用，到手写 ReAct 循环、MCP 协议与多 Agent 编排。
 
 ## 项目说明
