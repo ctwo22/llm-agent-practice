@@ -94,7 +94,7 @@ python 使用MCP.py
 
 ## 依赖治理
 
-`pip freeze` 输出 44 个包，`requirements.txt` 最终只保留 **6 个直接依赖**——其余 38 个在源码中找不到任何对应的 `import`：
+需要安装的直接依赖：
 
 ```
 openai==3.6.0              LLM 客户端
@@ -103,6 +103,12 @@ mcp==2.1.1                 MCP 协议
 httpx==0.28.1              HTTP 客户端
 pydantic==2.13.5           数据模型
 deepseek-tokenizer==0.3.0  分词器
+```
+
+安装：
+
+```powershell
+pip install -r requirements.txt
 ```
 
 ---
